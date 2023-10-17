@@ -1,0 +1,200 @@
+/* This code is created for an electronics practical to code a Zumo robot to line follow through a complex maze. Whilst the behaviours are
+tried to be more general, there is a specificity needed in order to navigate the particular maze design. The learning aim of this practical is 
+to program a FSM. The main structure of the program uses a Moore model - ie. the input does not directly influence the output. The 'sub'
+program uses a Mealy model, where the next_state is directly influenced by the input. This is to navigate specific features of the maze */
+
+#include "zumo_state.h"
+#include "zumo_driver.h" //moved from bottom to top 
+
+#define SPEED_MAX 200
+#define SPEED_HALT 0
+
+#define STATE_FORWARD 0
+#define STATE_BACKWARD 1
+#define STATE_LEFT    2
+#define STATE_RIGHT   3
+#define STATE_HALT    4
+
+int state = STATE_FORWARD;
+int next_state = STATE_FORWARD;
+
+//boolean set of inputs, defined in sensorInput function 
+bool centered=false; 
+bool edge=false; 
+bool offTrackL=false; 
+bool offTrackR=false; 
+bool gap=false; 
+bool full=false;  
+
+int gapcounter = 0;  
+
+//method to define maze condition variables
+void sensorInput(){ 
+   centered=false; 
+   edge=false; 
+   offTrackL=false; 
+   offTrackR=false; 
+   gap=false; 
+   full=false; 
+   int countG = 0;
+    int countF = 0;
+  position = reflectanceSensors.readLine(sensors); 
+
+  //define centred 
+  if(position>2000&&position<3000) centered=true; 
+  //define edge
+  if(sensors[0]>800||sensors[5]>800) edge=true; 
+  //define offTrackL
+  if(sensors[1]>800) offTrackL=true; //or position <1000
+  //define offTrackR
+  if(sensors[4]>800) offTrackR=true; //or position >4000
+  //define GAP
+  for(int i=0;i<6;i++){  
+  if (sensors[i]<100) countG++;  
+  if (countG==6) full=true; 
+  } 
+  //define Full 
+  for(int i=0;i<6;i++){  
+  if (sensors[i]>800) countF++;  
+  if (countF==6) full=true;   
+  } 
+  //cavaets... THIS IS THE DANGERZONE (maybe use if/else?)
+  if (full==true) { 
+  offTrackL=false;  
+  offTrackR=false;  
+  centered=false; 
+  edge=false; 
+  } 
+} 
+
+//defines state behvaiours 
+void stateForward() {
+  Serial.println("forward");
+  Serial0.println("forward");
+  motors.setSpeeds(SPEED_MAX, SPEED_MAX);
+}
+
+void stateBackward() {
+  Serial.println("backward");
+  Serial0.println("backward");
+  motors.setSpeeds(-SPEED_MAX, -SPEED_MAX);
+}
+
+void stateLeft() {
+  Serial.println("left");
+  Serial0.println("left");
+  motors.setSpeeds(SPEED_HALT, SPEED_MAX);  
+}
+
+void stateRight() {
+  Serial.println("right");
+  Serial0.println("right");
+  motors.setSpeeds(SPEED_MAX, SPEED_HALT);  
+}
+
+void stateHalt() {
+  Serial.println("halt");
+  Serial0.println("halt");
+  motors.setSpeeds(SPEED_HALT,SPEED_HALT);
+}
+
+void stateRightAngleLeft(){
+  Serial.println("left hand right angle");
+  Serial0.println("left hand right angle");
+  //moves of centerline
+  motors.setSpeeds(SPEED_HALT,SPEED_MAX);
+  delay(200); //ADJUST
+  while (!centered){
+  motors.setSpeeds(SPEED_HALT,SPEED_MAX);
+  }
+  next_state=stateForward;
+}
+
+void gap(int gapcount) {
+  switch(gapcount) {
+      case 0:
+      //example list of movements 
+      //need to feed back into FSM, work out delays, or find sensorInput that would trigger change in behaviour       
+        break;
+      case 1:
+        //behaviours
+        break;
+      case 2:
+        //behaviours 
+        if (gap){
+          stateForward();
+          sensorInput(); //see if gap has changed
+        }
+        else {
+          stateRightAngleLeft();
+        }
+        next_state=STATE_FORWARD;
+        break;
+      case 3:
+        //behaviours
+        next_state=STATE_FORWARD;
+
+        break;
+      default:
+        //behaviours 
+  }
+
+  void full(){
+    //method to turn, push block over gap and come back 
+    //dont forget to use sensorinput method to refresh sensor state. 
+  }
+
+void selectState() {
+  position = reflectanceSensors.readLine(sensors);
+  sensorInput();
+
+  if(state == STATE_FORWARD){
+    if(offTrackL) next_state = STATE_LEFT;
+    if(offTrackR) next_state = STATE_RIGHT;
+    if (gap||full) next_state = STATE_HALT; 
+  }
+
+  if(state == STATE_LEFT) {
+    if(centered) next_state = STATE_FORWARD;
+    if (gap) next_state = STATE_HALT;
+
+  }
+
+  if(state==STATE_RIGHT) {
+    if(centered)  next_state = STATE_FORWARD;
+    if (gap) next_state = STATE_HALT;
+  }
+
+  if(state==STATE_HALT){
+    if (gap) {
+      gapcounter++;
+      gap(); //assign next state here
+    }
+    else if (full) full(); //assign next state here
+    else {
+      Serial.println("Why are we stopping...?");
+      Serial0.println("Why are we stopping...?");
+      next_state = STATE_HALT;
+    }
+  }
+
+  state = next_state;
+  
+  switch(state) {
+    case STATE_FORWARD:
+      stateForward();
+      break;
+    case STATE_LEFT:
+      stateLeft();
+      break;
+    case STATE_RIGHT:
+      stateRight();
+      break;
+    case STATE_HALT:
+      stateHalt();
+      break;
+    default:
+      stateHalt();
+  }
+}
+

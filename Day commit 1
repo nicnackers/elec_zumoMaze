@@ -1,0 +1,274 @@
+#include "zumo_state.h"
+
+#define SPEED_MAX 100
+#define SPEED_HALT 0
+
+#define STATE_FORWARD 0
+#define STATE_BACKWARD 1
+#define STATE_LEFT    2
+#define STATE_RIGHT   3
+#define STATE_HALT    4
+
+int state = STATE_FORWARD;
+int next_state = STATE_FORWARD;
+
+//boolean set of inputs, defined in sensorInput function 
+bool centered=false; 
+bool edge=false; 
+bool offTrackL=false; 
+bool offTrackR=false; 
+bool gap=false; 
+bool full=false;  
+
+int gapcounter = 0;  
+int fullcounter = 0; 
+
+void batteryRead(){
+  float battery = analogRead(A1);
+  float voltage = battery*3.2255; //as 3300/1024 = 3.2mV, conversion scaling 
+  Serial.print("Battery voltage is: ");
+  Serial.println(voltage);
+  Serial0.print("Battery voltage is: ");
+  Serial0.println(voltage);
+  }
+
+//method to define maze condition variables
+void sensorInput(){ 
+  //initialise all to zero so as to not carry the previous values over 
+   centered=false; 
+   edge=false; 
+   offTrackL=false; 
+   offTrackR=false; 
+   gap=false; 
+   full=false; 
+  position = reflectanceSensors.readLine(sensors); 
+
+  //define centred 
+  if(position>2000&&position<3000) centered=true; 
+  //define edge
+  if(sensors[0]>800||sensors[5]>800) edge=true; 
+  //define offTrackL
+  if(sensors[1]>800) offTrackL=true; //or position <1000
+  //define offTrackR
+  if(sensors[4]>800) offTrackR=true; //or position >4000
+  //define GAP
+
+  //define Full & GAP using position sensor 
+  if(position<=100||position>=4900){
+    int countF=0;
+    int countG=0;
+  for(int i=0;i<6;i++){  
+  if (sensors[i]>700) countF++;  //initialise counter
+  if (sensors[i]<100) countG++;  
+  }
+   if (countF==6){
+      full=true;  
+      Serial.println("full is true");
+   } 
+      if (countG==6){
+      gap=true;  
+      Serial.println("gap is true");
+   } 
+  Serial.print("countG= ");
+  Serial.println(countG);
+  Serial.print("countF= ");
+  Serial.println(countF); 
+  
+  }
+
+  //cavaets... THIS IS THE DANGERZONE (maybe use if/else?)
+  if (full==true) { 
+  offTrackL=false;  
+  offTrackR=false;  
+  centered=false; 
+  edge=false; 
+  } 
+ }
+
+
+//defines state behvaiours 
+void stateForward() {
+  Serial.println("forward");
+  Serial0.println("forward");
+  motors.setSpeeds(SPEED_MAX, SPEED_MAX);
+}
+
+void stateBackward() {
+  Serial.println("backward");
+  Serial0.println("backward");
+  motors.setSpeeds(-SPEED_MAX, -SPEED_MAX);
+}
+
+void stateLeft() {
+  Serial.println("left");
+  Serial0.println("left");
+  motors.setSpeeds(SPEED_HALT, SPEED_MAX);  
+}
+
+void stateRight() {
+  Serial.println("right");
+  Serial0.println("right");
+  motors.setSpeeds(SPEED_MAX, SPEED_HALT);  
+}
+
+void stateHalt() {
+  Serial.println("halt");
+  Serial0.println("halt");
+  motors.setSpeeds(SPEED_HALT,SPEED_HALT);
+}
+
+void stateAngleLeft(){
+  Serial.println("left hand  angle");
+  Serial0.println("left hand  angle");
+  //moves of centerline
+  motors.setSpeeds(SPEED_HALT,SPEED_MAX);
+  delay(200); //ADJUST
+  while (!centered){
+  motors.setSpeeds(SPEED_HALT,SPEED_MAX);
+  sensorInput(); //continuesly check sensor inputs 
+  }
+}
+
+void stateAngleRight(){
+  Serial.println("right hand angle");
+  Serial0.println("right hand angle");
+  //moves off centerline
+  motors.setSpeeds(SPEED_MAX,SPEED_HALT);
+  delay(100); //ADJUST
+  while (!centered){
+  motors.setSpeeds(SPEED_MAX,SPEED_HALT);
+  sensorInput(); //continuesly check sensor inputs 
+  }
+}
+
+
+void gaps(int gc) {
+    Serial.print("gapcounter is at: ");
+    Serial.println(gc);
+  //switch case or if else method to determine next_state (set to HD maze)
+  //encoporate triggers to move between states
+  switch(gc) {
+    //HD BLOCK SLIDER
+      case 0: //block slider using delays to work out distance (v=st)
+        stateForward();
+        delay(500);
+        stateBackward();
+        delay(500);
+        while(!centered){
+        stateAngleLeft();
+        sensorInput();
+        }
+        next_state=STATE_FORWARD; 
+        break;
+    //HD FIRST CHASM
+      case 1: //move to edge left
+        while(!edge){
+          stateLeft();
+          sensorInput();
+        }
+        next_state=STATE_FORWARD;
+        break;
+    //D SECOND CHASM
+      case 2: //move to edge left (navigate angle)
+        while(!edge){
+          stateLeft();
+          sensorInput();
+        } //alternate option forward then softer right edge angle 
+        next_state=STATE_FORWARD;
+        break;
+    //C THIRD CHASM
+      case 3: //continues forward til sensors register not gap 
+        while(gap){
+        stateForward();
+        sensorInput();
+        }
+        stateAngleLeft();
+        next_state=STATE_FORWARD;
+        break;
+      case 4:
+        stateHalt();
+        delay(5000); //not really needed but just incase 
+      default:
+        stateHalt();
+        break;
+  }
+state=next_state; 
+}
+
+  void fulll(int fc){
+    Serial.print("fullcounter is at: ");
+    Serial.println(fc);
+    switch (fc) {
+      case 0:
+        stateAngleRight();
+        next_state=STATE_FORWARD;
+      case 1:
+        stateAngleLeft();
+        next_state=STATE_FORWARD;
+      default:
+        stateHalt();
+        break;
+  }
+  state=next_state; 
+}
+
+void selectState() {
+  batteryRead(); //maybe use counter so only reads once  
+  position = reflectanceSensors.readLine(sensors);
+  sensorInput();
+
+  if(state == STATE_FORWARD){
+    if(offTrackL) next_state = STATE_LEFT;
+    if(offTrackR) next_state = STATE_RIGHT;
+    if (gap||full) next_state = STATE_HALT; 
+  }
+
+  if(state == STATE_LEFT) {
+    if(centered||edge) next_state = STATE_FORWARD;
+    if (gap) next_state = STATE_HALT;
+
+  }
+
+  if(state==STATE_RIGHT) {
+    if(centered||edge)  next_state = STATE_FORWARD;
+    if (gap) next_state = STATE_HALT;
+  }
+
+  if(state==STATE_HALT){
+    if (gap) {
+      gaps(gapcounter); //assign next state here
+      gapcounter++;
+    }
+    else if (full) {
+      fulll(fullcounter); //assign next state here
+      fullcounter++;
+    }
+    else {
+      Serial.println("Why are we stopping...?");
+      Serial0.println("Why are we stopping...?");
+      next_state = STATE_HALT;
+    }
+  }
+
+    switch(state) {
+    case STATE_FORWARD:
+      stateForward();
+      break;
+    case STATE_LEFT:
+      stateLeft();
+      break;
+    case STATE_RIGHT:
+      stateRight();
+      break;
+    case STATE_HALT:
+      stateHalt();
+      break;
+    default:
+      stateHalt();
+  }
+
+    state = next_state;
+
+}
+
+#include "zumo_driver.h" //moved from bottom to top 
